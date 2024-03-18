@@ -1,8 +1,6 @@
 import * as THREE from 'https://cdn.skypack.dev/three@0.136';
 
-import {RGBELoader} from 'https://cdn.skypack.dev/three@0.136/examples/jsm/loaders/RGBELoader.js';
 import {OrbitControls} from 'https://cdn.skypack.dev/three@0.136/examples/jsm/controls/OrbitControls.js';
-
 
 class SDFJS {
   constructor() {
@@ -25,7 +23,6 @@ class SDFJS {
     controls.target.set(0, 1, 0);
     controls.update();
 
-    await this.setLightning_();
     await this.createSDFQuad();
 
     this.onWindowResize_();
@@ -35,27 +32,40 @@ class SDFJS {
     this.raf_();
   }
 
-  async setLightning_() {
-        var envmap = new RGBELoader().load( './resources/sky.hdr', function(texture){
-            texture.mapping = THREE.EquirectangularReflectionMapping;
-        });
-        this.scene_.background = envmap;
-        this.scene_.environment = envmap;
-
-        this.renderer_.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer_.toneMappingExposure =1;
-  }
-
   async createSDFQuad() {
     const vsh = await fetch('./shaders/sdf_vs.glsl');
     const fsh = await fetch('./shaders/sdf_ps.glsl');
 
+    const sphere1 = {
+      Position: new THREE.Vector3( 0,0,0 ),
+      Color: new THREE.Vector3( 1, 0, 0 ),
+      Radius: 1.0
+    };
+
+    const sphere2 = {
+      Position: new THREE.Vector3( 2,0,0 ),
+      Color: new THREE.Vector3( 0, 1, 0 ),
+      Radius: 1.0
+    };
+
+    const sphere3 = {
+      Position: new THREE.Vector3( 1,2,0 ),
+      Color: new THREE.Vector3( 0, 0, 1 ),
+      Radius: 1.0
+    };
+
     const material = new THREE.ShaderMaterial({
-      uniforms: {
-        resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
-      },
       vertexShader: await vsh.text(),
       fragmentShader: await fsh.text(),
+      uniforms: {
+        uNumSpheres: { value: 3 },
+        //uNumToruses: { value: 0 },
+        uSpheres: { 
+          value: [sphere1, sphere2, sphere3] 
+        },
+        uBackgroundColor: { value: new THREE.Vector3( 0.1, 0.1, 0.1 ) },
+      },
+
       transparent: true
     });
 
