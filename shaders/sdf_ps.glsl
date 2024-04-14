@@ -1,6 +1,13 @@
 //Functions from https://iquilezles.org/
 
-#define MAX_SDF 5
+#define MAX_SDF 50
+
+struct Plane 
+{
+	vec3 Normal;
+	vec3 Color;
+    float Height;
+};
 
 struct Sphere 
 {
@@ -9,38 +16,50 @@ struct Sphere
     float Radius;
 };
 
-//struct Torus
-//{
-//    vec3 Position;
-//    vec3 Rotation;
-//    vec3 Color;
-//    //Outer, Inner
-//    vec2 Data;
-//};
+struct Torus
+{
+    vec3 Position;
+    vec3 Rotation;
+    vec3 Color;
+    float InnerRadius;
+    float OuterRadius;
+};
+
+struct Box
+{
+    vec3 Position;
+    vec3 Rotation;
+    vec3 Scale;
+    vec3 Color;
+};
+
 
 uniform int uNumSpheres;
-uniform Sphere uSpheres[3];
+uniform Sphere uSpheres[MAX_SDF];
 
-//uniform int uNumToruses;
-//uniform Torus uToruses[MAX_SDF];
+uniform int uNumToruses;
+uniform Torus uToruses[MAX_SDF];
+
+uniform int uNumBoxes;
+uniform Box uBoxes[MAX_SDF];
 
 uniform vec3 uBackgroundColor;
 
 varying vec3 vPosition;
 varying vec2 vUvs;
 
-const float epsM = 0.001;
+const float epsM = 0.0001;
 const float epsN = 0.00001;
-const int maxSteps = 100;
+const int maxSteps = 512;
 const float maxDistance = 10000.0;
 const float blendSoftness = 0.15;
 
 vec2 smin( float a, float b, float k )
 {
-    k *= 6.0;
-    float h = max( k-abs(a-b), 0.0 )/k;
-    float m = h*h*h*0.5;
-    float s = m*k*(1.0/3.0); 
+    float h = 1.0 - min( abs(a-b)/(6.0*k), 1.0 );
+    float w = h*h*h;
+    float m = w*0.5;
+    float s = w*k; 
     return (a<b) ? vec2(a-s,m) : vec2(b-s,1.0-m);
 }
 
@@ -55,54 +74,76 @@ float sdTorus( vec3 p, vec2 t )
   return length(q)-t.y;
 }
 
+float sdBox( vec3 p, vec3 b )
+{
+  vec3 q = abs(p) - b;
+  return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0);
+}
+
 float sampleScene(vec3 position, out vec3 color)
 {
     color = vec3(0,0,0);
     float dist = maxDistance;
+    
     for(int i = 0; i < uNumSpheres; i++) {
         vec3 p = uSpheres[i].Position-position;
 
-        float s = 4.0;
-        vec3 rPos = p;
-        rPos.xy = p.xy - s*round(p.xy/s);
+        //Repeats
+        //float s = 4.0;
+        //vec3 rPos = p;
+        //rPos.xy = p.xy - s*round(p.xy/s);
 
-        float d = sdSphere(rPos, uSpheres[i].Radius);
+        float d = sdSphere(p, uSpheres[i].Radius);
         vec2 blend = smin(d, dist, blendSoftness);
         dist = blend.x;
         color = mix(uSpheres[i].Color, color, blend.y);
     }
-    //for(int i = 0; i < uNumToruses; i++) {
-    //    d = softMin(d, sdTorus(uToruses[i].Position-position, uToruses[i].Data), blendSoftness);
-    //    color = mix(uToruses[i].Color, color, min(1.0, d-epsM));
-    //}
+    for(int i = 0; i < uNumToruses; i++) {
+        vec3 p = uToruses[i].Position-position;
+
+        float d = sdTorus(p, vec2(uToruses[i].OuterRadius, uToruses[i].InnerRadius));
+        vec2 blend = smin(d, dist, blendSoftness);
+        dist = blend.x;
+        color = mix(uToruses[i].Color, color, blend.y);
+    }
+    for(int i = 0; i < uNumBoxes; i++) {
+        vec3 p = uBoxes[i].Position-position;
+
+        float d = sdBox(p, uBoxes[i].Scale);
+        vec2 blend = smin(d, dist, blendSoftness);
+        dist = blend.x;
+        color = mix(uBoxes[i].Color, color, blend.y);
+    }
    
    return dist;
 }
 
-float marchScene(vec3 cameraPosition, vec3 viewDir, inout vec3 color)
+float marchScene(vec3 cameraPosition, vec3 viewDir, out vec3 color)
 {
     float dist = 0.0;
     for (int i = 0; i < maxSteps; ++i) {
         vec3 p = cameraPosition + viewDir * dist;
-        vec3 c;
-        float d = sampleScene(p, c);
-        color = mix(c, color, min(1.0, ceil(d-epsM)));
-        dist += d*0.9;
-        if (d < epsM || dist > maxDistance) {
+        float d = sampleScene(p, color);
+        dist += d;
+        if (d < epsM ) {
+            return dist;
+        }
+        if ( dist >= maxDistance ) {
             return dist;
         }
     }
 
-    return maxDistance;
+    return dist;
 }
 
 vec3 calculateNormal(vec3 position) {
-   //Standard normal calculation
-   //return normalize(vec3(
-   //     sampleScene(position + vec3(epsN, 0.0, 0.0)) - sampleScene(position - vec3(epsN, 0.0, 0.0)),
-   //     sampleScene(position + vec3(0.0, epsN, 0.0)) - sampleScene(position - vec3(0.0, epsN, 0.0)),
-   //     sampleScene(position + vec3(0.0, 0.0, epsN)) - sampleScene(position - vec3(0.0, 0.0, epsN))
-   // ));
+    //Standard normal calculation
+    //vec3 padding;
+    //return normalize(vec3(
+    //     sampleScene(position + vec3(epsN, 0.0, 0.0), padding) - sampleScene(position - vec3(epsN, 0.0, 0.0), padding),
+    //     sampleScene(position + vec3(0.0, epsN, 0.0), padding) - sampleScene(position - vec3(0.0, epsN, 0.0), padding),
+    //     sampleScene(position + vec3(0.0, 0.0, epsN), padding) - sampleScene(position - vec3(0.0, 0.0, epsN), padding)
+    // ));
 
     //Tetrahedon sampling for 2 less samples
     const vec2 k = vec2(1,-1);
@@ -116,14 +157,24 @@ vec3 calculateNormal(vec3 position) {
 void main() {
     vec3 viewDir = normalize(vPosition - cameraPosition);
 
-    vec3 color = uBackgroundColor;
+    vec3 color = vec3(0,0,0);
     float d = marchScene(cameraPosition, viewDir, color);
 
-    vec3 normal = calculateNormal(cameraPosition + viewDir * d);
+    if (d < maxDistance)
+    {
+        vec3 normal = calculateNormal(cameraPosition + viewDir * d);
+        vec3 lightDir = normalize(vec3(0.5, 0.5, -1.0));
+        float diffuse = max(dot(normal, lightDir), 0.0);
 
-    vec3 lightDir = normalize(vec3(0.5, 0.5, -1.0));
-    float diffuse = max(dot(normal, lightDir), 0.0);
+        color += diffuse; 
 
-    color += diffuse; 
-    gl_FragColor = vec4(color, 1.0);
+        //Distance fog
+        color = mix(color, uBackgroundColor, min(1.0, d / 1000.0));
+
+        gl_FragColor = vec4(color, 1.0);
+    }
+    else 
+    {
+        gl_FragColor = vec4(uBackgroundColor, 1.0);
+    }
 }
