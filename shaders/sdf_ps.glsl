@@ -54,6 +54,40 @@ const int maxSteps = 512;
 const float maxDistance = 10000.0;
 const float blendSoftness = 0.15;
 
+mat3 rotateX(float theta) {
+    float c = cos(theta*0.0174533);
+    float s = sin(theta*0.0174533);
+    return mat3(
+        vec3(1, 0, 0),
+        vec3(0, c, -s),
+        vec3(0, s, c)
+    );
+}
+
+mat3 rotateY(float theta) {
+    float c = cos(theta*0.0174533);
+    float s = sin(theta*0.0174533);
+    return mat3(
+        vec3(c, 0, s),
+        vec3(0, 1, 0),
+        vec3(-s, 0, c)
+    );
+}
+
+mat3 rotateZ(float theta) {
+    float c = cos(theta*0.0174533);
+    float s = sin(theta*0.0174533);
+    return mat3(
+        vec3(c, -s, 0),
+        vec3(s, c, 0),
+        vec3(0, 0, 1)
+    );
+}
+
+mat3 rotate(vec3 rot) {
+    return rotateX(rot.x) * rotateY(rot.y) * rotateZ(rot.z); 
+}
+
 vec2 smin( float a, float b, float k )
 {
     float h = 1.0 - min( abs(a-b)/(6.0*k), 1.0 );
@@ -76,7 +110,7 @@ float sdTorus( vec3 p, vec2 t )
 
 float sdBox( vec3 p, vec3 b )
 {
-  vec3 q = abs(p) - b;
+  vec3 q = (abs(p) - b);
   return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0);
 }
 
@@ -100,6 +134,7 @@ float sampleScene(vec3 position, out vec3 color)
     }
     for(int i = 0; i < uNumToruses; i++) {
         vec3 p = uToruses[i].Position-position;
+        p *= rotate(uToruses[i].Rotation);
 
         float d = sdTorus(p, vec2(uToruses[i].OuterRadius, uToruses[i].InnerRadius));
         vec2 blend = smin(d, dist, blendSoftness);
@@ -108,6 +143,7 @@ float sampleScene(vec3 position, out vec3 color)
     }
     for(int i = 0; i < uNumBoxes; i++) {
         vec3 p = uBoxes[i].Position-position;
+        p *= rotate(uBoxes[i].Rotation);
 
         float d = sdBox(p, uBoxes[i].Scale);
         vec2 blend = smin(d, dist, blendSoftness);
@@ -154,27 +190,61 @@ vec3 calculateNormal(vec3 position) {
                       k.xxx*sampleScene( position + k.xxx*epsN, padding));
 }
 
+#define ENVPWR 0.5
+#define FRESNELPWR 2.0
+#define SUNPWR 1.0
+#define SUNSPECPWR 5.0
+#define SSSPWR 0.25
+
 void main() {
     vec3 viewDir = normalize(vPosition - cameraPosition);
 
+    vec3 litPixel = vec3(0,0,0);
     vec3 color = vec3(0,0,0);
     float d = marchScene(cameraPosition, viewDir, color);
-
+    
     if (d < maxDistance)
     {
-        vec3 normal = calculateNormal(cameraPosition + viewDir * d);
-        vec3 lightDir = normalize(vec3(0.5, 0.5, -1.0));
-        float diffuse = max(dot(normal, lightDir), 0.0);
+        vec3 n = calculateNormal(cameraPosition + viewDir * d);    
+        vec3 ref = reflect( viewDir, n );
 
-        color += diffuse; 
+        //Directional light
+        {
+            vec3  lightDir = normalize( vec3(0.5, 1.0, 0.5) );
+            vec3  h = normalize( lightDir-viewDir );
+            float diffuse = clamp(0.0, dot( n, lightDir ), 1.0);
+            float specular = pow( clamp( dot( n, h ), 0.0, 1.0 ),16.0);
+            specular *= diffuse;
+            specular *= 0.04+0.96*pow(clamp(1.0-dot(h,lightDir),0.0,1.0),5.0);
+        
+            litPixel += color*SUNPWR*diffuse;
+            litPixel += SUNSPECPWR*specular;
+        }
+
+        //Environment light
+        {
+            float diffuse = sqrt(clamp(0.0, 0.5+0.5*n.y, 1.0 ));
+            float specular = smoothstep( -0.2, 0.2, ref.y );
+            specular *= diffuse;
+            specular *= 0.04+0.96*pow(clamp(1.0+dot(n,viewDir),0.0,1.0), 5.0 );
+        
+            litPixel += color*ENVPWR*diffuse*uBackgroundColor;
+            litPixel += FRESNELPWR*specular*uBackgroundColor;
+        }
+
+        //Subsurface scattering
+        {
+            float diffuse = pow(clamp(1.0+dot(n,viewDir),0.0,1.0),2.0);
+        	litPixel += color*SSSPWR*diffuse;
+        }
 
         //Distance fog
-        color = mix(color, uBackgroundColor, min(1.0, d / 1000.0));
-
-        gl_FragColor = vec4(color, 1.0);
+        litPixel = mix(litPixel, uBackgroundColor, min(1.0, d / 500.0));
     }
     else 
     {
-        gl_FragColor = vec4(uBackgroundColor, 1.0);
+        litPixel = uBackgroundColor;
     }
+
+    gl_FragColor = vec4(litPixel, 1.0);
 }
