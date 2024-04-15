@@ -5,7 +5,7 @@ export class BaseScenario {
     }
 
     async create(app) {
-        app.camera.position.set(0, 0, -10);
+        app.camera.position.set(0, 1, -10);
 
         app.backgroundColor = new THREE.Vector3(1.0,1.0,1.0);
 
@@ -35,14 +35,11 @@ export class BaseScenario {
         app.toruses = this.toruses = [torus]
       }
 
-    async update(app, time) {
+    async update(app, time, deltaTime) {
         this.spheres[0].Position.y = Math.sin(time) + 1.0;
 
         this.toruses[0].Position.y = Math.cos(time) + 1.0;
         this.toruses[0].Rotation.x = time * 50.0;
         this.toruses[0].Rotation.z = time * 30.0;
-
-        app.spheres = this.spheres;
-        app.toruses = this.torus;
       } 
 }

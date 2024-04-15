@@ -123,9 +123,9 @@ float sampleScene(vec3 position, out vec3 color)
         vec3 p = uSpheres[i].Position-position;
 
         //Repeats
-        //float s = 4.0;
+        //float s = 50.0;
         //vec3 rPos = p;
-        //rPos.xy = p.xy - s*round(p.xy/s);
+        //rPos.xz = p.xz - s*round(p.xz/s);
 
         float d = sdSphere(p, uSpheres[i].Radius);
         vec2 blend = smin(d, dist, blendSoftness);
